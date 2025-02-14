@@ -9,10 +9,10 @@ class Application:
         self.master.geometry("1920x1080")
         self.master.title("Portrait Grabber by Felix Silva")
 
-        self.cropWidth = 200
+        self.cropWidth = 250
         self.cropHeight = 300
 
-        self.current_image = None
+        self.currentImage = None
         self.currentPilImage = None
 
         # Load Folder Button
@@ -21,7 +21,6 @@ class Application:
             width=20, height=5, font=("Arial", 24, "bold")
         )
         self.loadButton.pack(pady=50, side="top")
-        
         
     def loadImages(self):
         self.loadButton.destroy()
@@ -37,7 +36,7 @@ class Application:
         )
 
         self.canvas.create_window((0, 0), window=self.scrollableFrame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set, cursor="none")
 
         # Pack canvas and scrollbar
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -46,30 +45,78 @@ class Application:
         imagePath = filedialog.askdirectory()
 
         if imagePath:
-            self.image_paths = [os.path.join(imagePath, f) for f in os.listdir(imagePath) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            self.current_index = 0
-            self.show_image(self.image_paths[self.current_index])
+            # Create "cropped" subfolder if it doesn't exist
+            self.croppedFolder = os.path.join(imagePath, "cropped")
+            os.makedirs(self.croppedFolder, exist_ok=True)
+
+            self.imagePaths = [os.path.join(imagePath, f) for f in os.listdir(imagePath)
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg')) and "cropped" not in f.lower()]
+            
+            self.currentIndex = 0
+            self.showImage(self.imagePaths[self.currentIndex])
         else:
             messagebox.showerror("Error", "No folder selected")
             self.loadButton.pack(padx=400, pady=400)
 
-
-        print(imagePath) # test print
-
-    def show_image(self, image_path):
-        pilImage = Image.open(image_path)
+    def showImage(self, imagePath):
+        pilImage = Image.open(imagePath)
 
         self.currentPilImage = pilImage
-        self.current_image = ImageTk.PhotoImage(pilImage)
+        self.currentImage = ImageTk.PhotoImage(pilImage)
 
         # Display on the canvas
-        label = tk.Label(self.scrollableFrame, image=self.current_image)
-        label.pack()
-        
+        self.canvas.create_image(0, 0, image=self.currentImage, anchor="nw")
+
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.canvas.bind("<ButtonPress-1>", self.onPress)
+        self.canvas.bind("<Motion>", self.updateCrosshair)
+
+    def updateCrosshair(self, event):
+        self.canvas.delete("crosshair")
+
+        yOffset = self.canvas.canvasy(0)
+
+        x = event.x
+        y = event.y + yOffset
+        
+        halfWidth = self.cropWidth // 2
+        halfHeight = self.cropHeight // 2
+
+        self.canvas.create_line(x - halfWidth, y, x + halfWidth, y, tags="crosshair", width=3)  # Horizontal line
+        self.canvas.create_line(x, y - halfHeight, x, y + halfHeight, tags="crosshair", width=3)  # Vertical line
 
     def onPress(self, event):
-        print("x: ", event.x, ", y: ", event.y)
+        yOffset = self.canvas.canvasy(0)
+        
+        x = event.x
+        y = event.y + yOffset
+
+        print("Cropping at x:", x, "y:", y)
+
+        # Calculate cropping box
+        left = max(x - self.cropWidth // 2, 0)
+        upper = max(y - self.cropHeight // 2, 0)
+        right = min(x + self.cropWidth // 2, self.currentPilImage.width)
+        lower = min(y + self.cropHeight // 2, self.currentPilImage.height)
+
+        croppedImage = self.currentPilImage.crop((left, upper, right, lower))
+
+        # Get original filename without extension
+        originalFilename = os.path.basename(self.imagePaths[self.currentIndex])
+        nameWithoutExt, ext = os.path.splitext(originalFilename)
+
+        # Save the cropped image with "cropped_" prefix
+        savePath = os.path.join(self.croppedFolder, f"cropped_{nameWithoutExt}.png")
+        croppedImage.save(savePath)
+
+        print(f"Cropped image saved to: {savePath}")
+
+        # Load next image
+        if self.currentIndex < len(self.imagePaths) - 1:
+            self.currentIndex += 1
+            self.showImage(self.imagePaths[self.currentIndex])
+        else:
+            messagebox.showinfo("End of Folder", "No more images left.")
 
 root = tk.Tk()
 root.title("Portrait Grabber by Felix Silva")
